@@ -1,0 +1,20 @@
+{
+  "municipio": "76001",
+  "nombre_municipio": "Cali",
+  "anio_inicial": 2007,
+  "anio_final": 2025,
+  "ventana_canal_anios": 5,
+  "cuantil_canal": 0.75,
+  "min_anios_canal": 5,
+  "fin_entrenamiento": 2021,
+  "fin_validacion": 2023,
+  "anio_prueba": 2024,
+  "anio_adicional": 2025,
+  "semilla": 42,
+  "horizonte_semanas": 1,
+  "politica_sin_registros": "desconocido",
+  "inclusion_estados": [2, 3, 5],
+  "fecha_principal": "INI_SIN",
+  "politica_fecha_faltante": "excluir_sin_sustituir",
+  "version_experimento": "v1_ini_sin"
+}
