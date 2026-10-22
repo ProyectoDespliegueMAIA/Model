@@ -30,9 +30,19 @@ md('''# 01 Preparación y exploración semanal de dengue en Cali
 
 **Propósito:** obtener una serie semanal trazable antes de entrenar. Este piloto utiliza notificaciones del evento 210 con estados 2, 3 y 5; sus conteos no equivalen a todas las infecciones existentes. La comparación de municipios y el clima quedan para etapas siguientes.
 
+**Pregunta del modelo:** ¿Podemos predecir, a partir de los casos de dengue de las semanas anteriores y la época del año, si los casos de la próxima semana en Cali superarán el umbral histórico correspondiente a esa semana?
+
+| Elemento | Información utilizada | Función |
+|---|---|---|
+| Predictores X | Semanas recientes y posición de la semana objetivo en el ciclo anual | Información con la que el modelo intenta anticipar el resultado |
+| Umbral histórico | Misma semana epidemiológica en los cinco años anteriores | Referencia que define qué llamamos exceso |
+| Etiqueta y | Conteo observado del objetivo comparado con su umbral | Respuesta que se aprende en entrenamiento y se verifica después |
+
+El modelo posterior estimará una probabilidad de exceso, no un número exacto de casos ni un diagnóstico individual. Construir la etiqueta con datos observados de la semana objetivo no autoriza usarlos como predictores. El umbral en número de casos es distinto del umbral de probabilidad que activa una alerta.
+
 Ejecutar las celdas en orden. Los cálculos están en `src/dengue/pipeline.py` para reutilizarlos y probarlos. No se muestran filas individuales de pacientes. Los originales permanecen intactos.
 
-**Etapas:** extracción → auditoría → calendario → exploración → canal → variables causales → exportación. El notebook 02 realiza el primer entrenamiento después de estas comprobaciones.'''),
+**Etapas:** extracción → auditoría → calendario → exploración → canal y etiqueta → variables de historia previa → exportación. El notebook 02 realiza el primer entrenamiento después de estas comprobaciones. Las variables representan asociaciones predictivas, no efectos causales demostrados.'''),
 md('''## 1 Configuración y fuentes
 
 La extracción se ejecuta antes de este notebook con `python scripts/extraer_cali.py`. Lee los 19 Excel, conserva archivo y fila de origen y genera una huella de las 69 columnas originales por registro. Los CSV derivados del compañero sirven como contraste; no constituyen la fuente canónica porque su calendario necesita reconstrucción.'''),
@@ -145,16 +155,47 @@ md('''## 7 Definición inicial del exceso
 
 Para el objetivo semanal t, el umbral es el percentil 75 de los conteos de **esa misma semana epidemiológica en los cinco años anteriores**, con interpolación lineal del cuantil. Se requieren cinco valores válidos; si faltan, no se asigna etiqueta. `exceso=1` cuando el conteo observado supera estrictamente el umbral.
 
-Es una definición operacional inicial, no una declaración oficial de epidemia ni una reproducción del canal geométrico de Bortman. Cinco observaciones por semana producen umbrales inestables; queda pendiente el análisis de sensibilidad. Las semanas 53 se conservan en la serie y en los rezagos, aunque pueden no tener suficientes años previos para etiquetarse. Los años iniciales sirven para inicializar el canal.'''),
+Esta comparación histórica define la etiqueta; no sustituye los rezagos recientes que recibirá el modelo. El umbral solo consulta años anteriores. El conteo objetivo se conoce después y permite evaluar si hubo exceso; no se incluye en X.
+
+Es una definición operacional inicial, no una declaración oficial de epidemia ni una reproducción del canal geométrico de Bortman. Cinco observaciones por semana producen umbrales inestables; queda pendiente el análisis de sensibilidad. Los años iniciales sirven para inicializar el canal.
+
+**Semana 53:** no depende exclusivamente de que el año sea bisiesto. Sus registros y su posición en la secuencia se conservan; si falta historia suficiente, `umbral_casos` y `exceso` quedan desconocidos, no en cero. No se combina automáticamente con la semana 52. En la semana 1 posterior, el rezago de una semana sí utiliza la semana 53 cuando existe. En nuestro panel las cuatro semanas 53 no tienen cinco antecedentes válidos dentro de su ventana, por lo que no se usan como objetivos etiquetados.
+
+Por ejemplo, el valor `casos=30` en 2025/53 representa treinta notificaciones agrupadas en una fila semanal, no treinta semanas u observaciones de entrenamiento. La tabla siguiente permite comprobar la diferencia entre conservar el conteo y disponer de una etiqueta.'''),
 code('''
 panel = agregar_canal(panel,cfg)
 display(panel.groupby('anio_epi').agg(etiquetadas=('exceso','count'),positivas=('exceso','sum')))
 display(panel.loc[panel.exceso.notna(), ['anio_epi','semana_epi','casos','n_anios_canal','umbral_casos','exceso']].head(10))
 assert panel.loc[panel.exceso.notna(),'n_anios_canal'].ge(5).all()
+display(panel.loc[panel.semana_epi.eq(53),
+    ['anio_epi','semana_epi','inicio_semana','fin_semana','casos','n_anios_canal','umbral_casos','exceso']])
+'''),
+md('''### 7.1 Ejemplo histórico de las dos referencias temporales
+
+Para ilustrar la semana 20 de 2023, mostramos por separado las doce semanas inmediatamente anteriores y la semana 20 de 2018–2022. Las primeras son la fuente de rezagos y ventanas; las segundas forman el umbral. La tabla del objetivo usa su conteo observado únicamente para verificar la etiqueta: este ejemplo no es una predicción del modelo.'''),
+code('''
+pos = panel.index[panel.anio_epi.eq(2023) & panel.semana_epi.eq(20)][0]
+objetivo = panel.loc[pos]
+recientes = panel.iloc[max(0,pos-12):pos][['anio_epi','semana_epi','inicio_semana','fin_semana','casos']]
+historico = panel.loc[
+    panel.anio_epi.between(objetivo.anio_epi-cfg['ventana_canal_anios'],objetivo.anio_epi-1)
+    & panel.semana_epi.eq(objetivo.semana_epi),
+    ['anio_epi','semana_epi','inicio_semana','casos']]
+print('A. Historia reciente: fuente de los predictores')
+display(recientes)
+print('B. Misma semana de años anteriores: fuente del umbral')
+display(historico)
+print('C. Semana objetivo: comparación retrospectiva para obtener la etiqueta')
+display(panel.loc[[pos],['anio_epi','semana_epi','casos','umbral_casos','exceso']])
+assert recientes.fin_semana.max() < objetivo.inicio_semana
+assert historico.anio_epi.lt(objetivo.anio_epi).all()
+assert np.isclose(historico.casos.quantile(cfg['cuantil_canal']),objetivo.umbral_casos)
 '''),
 md('''## 8 Variables disponibles antes de la semana objetivo
 
 La fila t corresponde a la semana a predecir; su corte nominal es el sábado inmediatamente anterior. Se usan conteos de t−1, t−2, t−3, t−4, t−8 y t−12, media/desviación de las cuatro semanas anteriores y estacionalidad conocida del objetivo. Se exige historia completa para estas variables; no se interpolan faltantes.
+
+La hipótesis de trabajo es que la historia reciente ayuda a anticipar el exceso relativo a ese umbral estacional. Un aumento frente a la semana anterior no significa necesariamente exceso, y puede haber exceso aun cuando el conteo esté bajando.
 
 Se excluyen como predictores los conteos del objetivo, su etiqueta, su umbral y las características de pacientes de esa semana. El umbral se guarda para interpretar la etiqueta y construir la referencia de persistencia. Incluso los rezagos finales deben interpretarse como evaluación retrospectiva, pues el retraso de notificación impide afirmar que estuvieran completos al corte.'''),
 code('''
@@ -164,6 +205,47 @@ display(pd.DataFrame({'variable':FEATURES,'origen':['historia anterior']*8+['cal
 annual, summary = exportar_eda(raw,micro,auditoria,calidad,panel)
 display(annual)
 display(pd.Series({k:v for k,v in summary.items() if k!='diagnostico_por_archivo'},name='Resultado de preparación').to_frame())
+assert not set(FEATURES).intersection({'casos','exceso','umbral_casos','casos_confirmados','hospitalizados'})
+assert panel.loc[panel.elegible_modelo,FEATURES+['exceso']].notna().all().all()
+'''),
+md('''### 8.1 Diccionario del panel y selección de campos
+
+El panel semanal exportado tiene 28 columnas en esta versión. Solo diez son predictores y `exceso` es la respuesta. Los microdatos individuales constituyen otra tabla para auditoría. Elegir un campo como predictor no demuestra significancia estadística ni una mejora: su aporte debe comprobarse en validación temporal.'''),
+code('''
+significados = {
+    'anio_epi':'Año epidemiológico; identifica y separa bloques temporales.',
+    'semana_epi':'Número de semana epidemiológica.',
+    'inicio_semana':'Domingo de inicio de la semana.',
+    'fin_semana':'Sábado de fin de la semana.',
+    'semanas_en_anio':'52 o 53; interviene en la codificación del ciclo anual.',
+    'n_registros':'Filas incluidas; cero significa ausencia de filas, no cero casos certificado.',
+    'casos_confirmados':'Registros de estados finales 3 o 5.',
+    'hospitalizados':'Registros con hospitalización indicada.',
+    'retraso_mediana':'Mediana de retrasos de notificación no negativos disponibles.',
+    'ultima_notificacion':'Última notificación entre los registros de la semana.',
+    'semana_con_registros':'Indica presencia de registros, sin certificar cobertura completa.',
+    'casos':'Conteo analítico; desconocido cuando no hay registros.',
+    'cod_municipio':'Código de Cali, 76001.',
+    'n_anios_canal':'Antecedentes válidos disponibles para el umbral de esa semana.',
+    'umbral_casos':'P75 de la misma semana en los cinco años anteriores.',
+    'exceso':'Etiqueta: 1 si casos supera el umbral, 0 en otro caso; desconocida si falta información.',
+    **{f'lag_{k}':f'Conteo de {k} semana(s) antes de la semana objetivo.' for k in [1,2,3,4,8,12]},
+    'media_4':'Media de las cuatro semanas anteriores, sin incluir el objetivo.',
+    'std_4':'Desviación estándar de las cuatro semanas anteriores.',
+    'semana_sin':'Seno de la posición del objetivo en el ciclo anual.',
+    'semana_cos':'Coseno de la posición del objetivo en el ciclo anual.',
+    'corte_prediccion':'Sábado anterior al objetivo; corte nominal retrospectivo.',
+    'elegible_modelo':'Hay etiqueta y todas las variables predictoras disponibles.'}
+assert set(significados)==set(panel.columns)
+diccionario = pd.DataFrame([
+    {'columna':c,'significado':significados[c],
+     'uso':('Predictor X' if c in FEATURES else 'Etiqueta y' if c=='exceso'
+            else 'Construcción de etiqueta' if c in ['n_anios_canal','umbral_casos']
+            else 'Observación histórica' if c=='casos' else 'Identificación o auditoría')}
+    for c in panel.columns])
+display(diccionario)
+print(f'Panel: {panel.shape[0]} filas, {panel.shape[1]} columnas; X: {len(FEATURES)} predictores; y: exceso.')
+diccionario.to_csv(ROOT/'reports/tables/diccionario_panel_semanal.csv',index=False)
 '''),
 md('''## 9 Cierre de la fase exploratoria y siguiente paso
 
@@ -178,11 +260,27 @@ md('''# 02 Primer entrenamiento de alerta semanal de dengue
 
 Este ejercicio entrena una **regresión logística con penalización L2** para estimar la probabilidad de exceso en la semana siguiente al corte nominal, según la definición P75 del notebook 01. Se compara con referencias simples. HistGradientBoostingClassifier queda para la siguiente comparación; todavía no hay búsqueda entre familias de modelos.
 
+**Pregunta:** ¿Podemos predecir, a partir de los casos de dengue de las semanas anteriores y la época del año, si los casos de la próxima semana en Cali superarán el umbral histórico correspondiente a esa semana?
+
+Los diez predictores proceden de semanas recientes y del calendario. El P75 de la misma semana de años anteriores define la etiqueta `exceso`, pero esos conteos anuales no entran directamente como predictores. El modelo devuelve una probabilidad; una regla posterior la transforma en alerta. No se pronostica el número exacto de casos.
+
+**Ejecución:** por defecto se valida y reutiliza el modelo local si coincide con los datos, configuración y variables actuales. Si falta o cambió alguno de esos elementos, se entrena de nuevo. Para repetir explícitamente el ajuste, establecer `REENTRENAR=True` en la sección 3. Repetir el mismo ajuste no convierte a 2024 en una prueba nueva.
+
 La evaluación es retrospectiva sobre notificaciones finales: no demuestra rendimiento en tiempo real ni capacidad para detectar brotes definidos por una fuente externa. Ejecutar primero el notebook 01.'''),
 md('## 1 Entorno y carga del panel validado'),code(setup),
 code('''
 panel = pd.read_csv(ROOT/'data/processed/cali_panel_semanal.csv',
     parse_dates=['inicio_semana','fin_semana','corte_prediccion'])
+assert cfg['fecha_principal']=='INI_SIN' and cfg['politica_fecha_faltante']=='excluir_sin_sustituir'
+assert cfg['horizonte_semanas']==1, 'Este experimento implementa un horizonte de una semana.'
+assert not panel.duplicated(['anio_epi','semana_epi']).any()
+assert panel.inicio_semana.diff().dropna().eq(pd.Timedelta(days=7)).all()
+assert panel.corte_prediccion.eq(panel.inicio_semana-pd.Timedelta(days=1)).all()
+reconstruido = agregar_features(agregar_canal(panel,cfg))
+np.testing.assert_allclose(panel[FEATURES+['umbral_casos','exceso']],
+    reconstruido[FEATURES+['umbral_casos','exceso']],equal_nan=True,atol=1e-12)
+assert panel.elegible_modelo.eq(reconstruido.elegible_modelo).all()
+assert set(FEATURES).isdisjoint({'casos','umbral_casos','exceso','casos_confirmados','hospitalizados'})
 datos = panel.loc[panel.elegible_modelo].copy()
 print('Observaciones elegibles:',len(datos))
 display(datos.groupby('anio_epi').exceso.agg(['count','sum','mean']).rename(columns={'sum':'positivos','mean':'prevalencia'}))
@@ -191,14 +289,18 @@ md('''## 2 Partición cronológica y propósito de cada bloque
 
 - Hasta 2021: ajuste del escalador y de los coeficientes.
 - 2022–2023: elección del umbral de probabilidad, maximizando F2 en una rejilla predefinida; en empates se prefiere el umbral mayor.
-- 2024: prueba sin seleccionar modelo o umbral con sus resultados.
+- 2024: evaluación de referencia, sin usarla para ajustar coeficientes o escoger umbral en esta ejecución. Ya observada en revisiones anteriores; no es una nueva prueba independiente.
 - 2025: evaluación adicional; las cifras requieren revisar cobertura y cambio de comportamiento.
 
 El canal de cada fila se calcula con sus años anteriores. La validación y prueba pueden usar semanas ya observadas anteriores dentro de su propio bloque, sin reentrenar: se simulan orígenes móviles de un paso con datos finales. No equivale a predecir todo el bloque desde un único corte. No hay escalado ni selección de variables con prueba.'''),
 code('''
 particiones_previas = datos.assign(bloque=np.select(
-    [datos.anio_epi<=2021,datos.anio_epi.between(2022,2023),datos.anio_epi.eq(2024)],
-    ['entrenamiento','validacion','prueba_2024'],default='adicional_2025'))
+    [datos.anio_epi<=cfg['fin_entrenamiento'],
+     datos.anio_epi.between(cfg['fin_entrenamiento']+1,cfg['fin_validacion']),
+     datos.anio_epi.eq(cfg['anio_prueba']),datos.anio_epi.eq(cfg['anio_adicional'])],
+    ['entrenamiento','validacion',f"prueba_{cfg['anio_prueba']}",f"adicional_{cfg['anio_adicional']}"],
+    default='fuera_del_diseno'))
+assert particiones_previas.bloque.ne('fuera_del_diseno').all(), 'Hay años sin bloque de evaluación definido.'
 display(particiones_previas.groupby('bloque').agg(n=('exceso','size'),
     positivos=('exceso','sum'),inicio=('inicio_semana','min'),fin=('fin_semana','max')))
 print('Variables:',FEATURES)
@@ -209,9 +311,56 @@ El pipeline ajusta `StandardScaler` con entrenamiento y después `LogisticRegres
 
 Referencias: probabilidad constante igual a prevalencia de entrenamiento; persistencia de conteo, que pronostica el último conteo observado y lo contrasta con el umbral conocido del objetivo; y la regla trivial de alertar siempre. Las decisiones binarias de referencia no son probabilidades calibradas. Se informa también la logística a umbral 0,5 para separar el efecto del modelo del efecto del umbral.'''),
 code('''
-model, metricas, predicciones, particiones, coeficientes = entrenar_logistica(panel,cfg)
+import joblib
+from dengue.validacion_modelo import coincide_artefacto, verificar_resultados
+REENTRENAR = False
+version = cfg['version_experimento']
+ruta_artefacto = ROOT/f'modelos/logistica_cali_{version}.joblib'
+tablas = ROOT/'reports/tables'
+archivos = ['metricas_logistica.csv','predicciones_logistica.csv','particiones_temporales.csv',
+            'coeficientes_logistica.csv','seleccion_umbral_validacion.csv']
+artefacto = joblib.load(ruta_artefacto) if ruta_artefacto.exists() else None
+reutilizar = (not REENTRENAR and artefacto is not None
+    and coincide_artefacto(panel,cfg,artefacto['metadata'])
+    and all((tablas/f).exists() for f in archivos))
+if reutilizar:
+    model, metadata = artefacto['pipeline'], artefacto['metadata']
+    metricas = pd.read_csv(tablas/'metricas_logistica.csv')
+    predicciones = pd.read_csv(tablas/'predicciones_logistica.csv',parse_dates=['inicio_semana'])
+    particiones = pd.read_csv(tablas/'particiones_temporales.csv')
+    coeficientes = pd.read_csv(tablas/'coeficientes_logistica.csv')
+    print('Modelo reutilizado: coinciden panel, configuración, variables y versión. No se reentrenó.')
+else:
+    model, metricas, predicciones, particiones, coeficientes = entrenar_logistica(panel,cfg)
+    metadata = joblib.load(ruta_artefacto)['metadata']
+    print('Modelo entrenado: ajuste solicitado o artefacto/resultados ausentes o incompatibles.')
+controles = verificar_resultados(panel,cfg,model,metadata,metricas,predicciones,particiones,coeficientes)
+display(controles)
 display(particiones)
-display(pd.read_csv(ROOT/'reports/tables/seleccion_umbral_validacion.csv').sort_values('f2_validacion',ascending=False).head(6))
+tabla_umbrales = pd.read_csv(tablas/'seleccion_umbral_validacion.csv')
+from sklearn.metrics import fbeta_score
+val = datos.loc[datos.anio_epi.between(cfg['fin_entrenamiento']+1,cfg['fin_validacion'])]
+prob_val = model.predict_proba(val[FEATURES])[:,1]
+np.testing.assert_allclose(tabla_umbrales.f2_validacion,
+    [fbeta_score(val.exceso,prob_val>=t,beta=2,zero_division=0) for t in tabla_umbrales.umbral])
+display(tabla_umbrales.sort_values(['f2_validacion','umbral'],ascending=False).head(6))
+print('Umbral de probabilidad validado:',round(metadata['umbral_probabilidad'],2))
+'''),
+md('''### 3.1 Probabilidad, alerta y comprobación del resultado
+
+El modelo estima una probabilidad de exceso. La alerta se activa si esa probabilidad alcanza el umbral elegido con validación. `umbral_casos` está en número de notificaciones y define el evento que queremos anticipar; `umbral_probabilidad` es un parámetro de decisión aplicado a la salida del clasificador.
+
+La tabla siguiente ilustra semanas de validación: el corte y las variables preceden al objetivo; los casos y la etiqueta observada solo se muestran para comprobar después el resultado. Es un ejemplo retrospectivo, no una alerta actual emitida en tiempo real.'''),
+code('''
+ejemplo = predicciones.loc[predicciones.bloque.eq('validacion')
+    & predicciones.modelo.eq('logistica_umbral_validado')].head(5).copy()
+ejemplo['inicio_semana'] = pd.to_datetime(ejemplo.inicio_semana)
+ejemplo = ejemplo.merge(panel[['inicio_semana','corte_prediccion']],on='inicio_semana',validate='one_to_one')
+ejemplo['umbral_probabilidad'] = metadata['umbral_probabilidad']
+display(ejemplo[['corte_prediccion','inicio_semana','probabilidad','umbral_probabilidad',
+                'prediccion','casos','umbral_casos','exceso']].rename(columns={
+    'inicio_semana':'semana_objetivo','prediccion':'alerta','casos':'casos_observados_despues',
+    'exceso':'etiqueta_observada_despues'}).round(4))
 '''),
 md('''## 4 Métricas fuera de entrenamiento
 
@@ -223,6 +372,14 @@ La evaluación se hace contra nuestra etiqueta histórica, no contra una lista i
 code('''
 cols=['bloque','modelo','n','prevalencia','umbral_probabilidad','sensibilidad','especificidad','precision','f1','f2','pr_auc_AP','roc_auc','brier','tn','fp','fn','tp']
 display(metricas.loc[metricas.bloque.ne('entrenamiento'),cols].round(4))
+print('Resumen de validación: compara capacidad predictiva con una referencia sencilla.')
+resumen = metricas.loc[metricas.bloque.eq('validacion') & metricas.modelo.isin(
+    ['logistica_umbral_validado','persistencia_conteo']),
+    ['modelo','sensibilidad','precision','f1','fp','fn']].copy()
+for c in ['sensibilidad','precision','f1']:
+    resumen[c] = 100*resumen[c]
+display(resumen.rename(columns={'sensibilidad':'sensibilidad (%)','precision':'precisión (%)','f1':'F1 (%)',
+    'fp':'falsas alarmas','fn':'excesos omitidos'}).round(1))
 '''),
 md('## 5 Matriz de confusión de prueba y evolución de probabilidades'),
 code('''
@@ -256,7 +413,7 @@ display(coeficientes.sort_values('coeficiente_estandarizado',key=abs,ascending=F
 '''),
 md('''## 7 Artefactos y lectura de resultados
 
-Se guardaron métricas por bloque, predicciones, selección del umbral, coeficientes y un artefacto local con pipeline y metadatos. El modelo sigue entrenado solo hasta 2021: no se reajustó usando prueba ni se presenta como una versión operacional final.
+Se verificaron métricas por bloque, predicciones, selección del umbral, coeficientes y el artefacto local con metadatos. Si no hubo cambios en los datos o la configuración, se reutilizó el modelo; la salida de la sección 3 informa la acción ejecutada. Se comprobó la huella del panel, el ajuste del escalador solo con entrenamiento y la coincidencia entre inferencias actuales, matrices de confusión y métricas guardadas. El modelo sigue ajustado solo hasta 2021; no se presenta como versión operacional final.
 
 Una buena métrica no resuelve las limitaciones de disponibilidad: los rezagos contienen conteos finales que pudieron notificarse más tarde. Antes de desplegar debemos revisar este supuesto con el experto y evaluar latencias o construir una versión basada en datos disponibles por notificación. Tampoco se ha validado la cobertura de semanas sin registros.
 
@@ -264,7 +421,13 @@ La comparación siguiente debe mantener este protocolo y reservar una evaluació
 
 Referencias: [validación temporal scikit-learn](https://scikit-learn.org/stable/modules/cross_validation.html#time-series-split) y [Umaña et al.](https://publichealth.jmir.org/2026/1/e79914).''')]
 
+import argparse
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--solo',choices=['01_preparacion_exploracion_cali.ipynb','02_primer_modelo_logistica_cali.ipynb'])
+args=parser.parse_args()
 for name,items in [('01_preparacion_exploracion_cali.ipynb',cells),('02_primer_modelo_logistica_cali.ipynb',cells2)]:
+    if args.solo and name!=args.solo:
+        continue
     n=nbf.v4.new_notebook(cells=items,metadata={
         'kernelspec':{'display_name':'Python · Dengue piloto','language':'python','name':'dengue-piloto'},
         'language_info':{'name':'python','version':'3.12'}})

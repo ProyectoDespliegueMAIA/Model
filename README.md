@@ -22,6 +22,8 @@ Primer ejercicio reproducible de preparación, exploración y clasificación de 
 
 Los notebooks están ejecutados y contienen tablas y figuras agregadas. Sus celdas se deben ejecutar en orden; las funciones reutilizables se encuentran en `src/dengue/pipeline.py`. El segundo notebook requiere las salidas del primero.
 
+El notebook 02 valida y reutiliza el modelo local cuando coinciden la huella del panel, la configuración y las variables; también recalcula inferencias y métricas para comprobar los resultados guardados. Para repetir el ajuste explícitamente, cambiar `REENTRENAR=False` por `True` en su sección 3. Si el artefacto o las tablas faltan, o los datos/configuración cambiaron, se entrena de nuevo. Se puede ejecutar únicamente uno con `scripts/ejecutar_notebooks.py --solo 02_primer_modelo_logistica_cali.ipynb`.
+
 ## Entorno y ejecución en Windows
 
 Se utilizó Python 3.12. Los paquetes principales se fijan en `requirements.txt`.
