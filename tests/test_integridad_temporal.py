@@ -68,3 +68,20 @@ def test_fecha_sintomas_no_depende_de_notificacion_ni_se_sustituye():
     assert not m.fecha_sustituida.any()
     assert m.loc[m.CONSECUTIVE.eq("a"),"flag_notificacion_anterior_sintomas"].all()
     assert quality["anomalias_notificacion_conservadas"]==1
+
+
+def test_filtro_geografico_separa_los_municipios():
+    ciudades = [("piloto", "76001"), ("medellin", "05001"), ("villavicencio", "50001"), ("ibague", "73001")]
+    rows=[]
+    for slug,codigo in ciudades:
+        rows.append({"COD_EVE":"210","COD_PAIS_O":"170","COD_DPTO_O":codigo[:2],
+          "COD_MUN_O":codigo[2:],"Estado_final_de_caso":"2","confirmados":"0",
+          "FEC_CON":"12/03/2013","PAC_HOS":"2","ARCHIVO_ORIGEN":"ejemplo.xlsx",
+          "CONSECUTIVE":codigo,"HUELLA_REGISTRO":codigo,"INI_SIN":"10/03/2013","FEC_NOT":"13/03/2013"})
+    raw=pd.DataFrame(rows)
+    for slug,codigo in ciudades:
+        m,_,_=preparar_microdatos(raw,config(slug))
+        assert m.CONSECUTIVE.tolist()==[codigo]
+        assert m.cod_municipio.tolist()==[codigo]
+        panel=construir_panel(m,config(slug))
+        assert panel.n_registros.sum()==1

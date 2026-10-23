@@ -10,3 +10,6 @@ reports/
 .jupyter/
 .cache/
 *.log
+
+# Datos y artefactos locales por municipio
+ciudades/

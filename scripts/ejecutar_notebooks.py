@@ -3,7 +3,8 @@ from pathlib import Path
 import os,sys,json,argparse
 ROOT=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--solo',choices=['01_preparacion_exploracion_cali.ipynb','02_primer_modelo_logistica_cali.ipynb'])
+parser.add_argument('--solo', help='Nombre exacto del notebook')
+parser.add_argument('--ciudad',choices=['cali','medellin','villavicencio','ibague'],default='cali')
 args=parser.parse_args()
 for key, rel in [('JUPYTER_PATH','.jupyter'),('JUPYTER_RUNTIME_DIR','.jupyter/runtime'),
                  ('IPYTHONDIR','.jupyter/ipython'),('MPLCONFIGDIR','.cache/matplotlib'),
@@ -15,6 +16,8 @@ kernel=ROOT/'.jupyter/kernels/dengue-piloto';kernel.mkdir(parents=True,exist_ok=
 import nbformat
 from nbclient import NotebookClient
 for file in sorted((ROOT/'notebooks').glob('0[12]_*.ipynb')):
+    if not file.stem.endswith('_'+args.ciudad):
+        continue
     if args.solo and file.name!=args.solo:
         continue
     nb=nbformat.read(file,as_version=4)

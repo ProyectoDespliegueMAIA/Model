@@ -9,8 +9,11 @@ ROOT = Path(__file__).resolve().parents[2]
 FEATURES = ["lag_1", "lag_2", "lag_3", "lag_4", "lag_8", "lag_12",
             "media_4", "std_4", "semana_sin", "semana_cos"]
 
-def config():
-    return json.loads((ROOT / "configs/piloto.json").read_text(encoding="utf-8"))
+def config(ciudad="piloto"):
+    return json.loads((ROOT / f"configs/{ciudad}.json").read_text(encoding="utf-8"))
+
+def raiz_salida(cfg):
+    return ROOT / cfg.get("directorio_salida", ".")
 
 def guardar_json(path, obj):
     path = Path(path)
@@ -48,7 +51,7 @@ def calendario(inicial=2007, final=2025):
 def preparar_microdatos(raw, cfg):
     """Aplica exclusiones registradas. Nunca recorta retrasos ni interpola fechas."""
     m = raw.copy()
-    steps = [{"etapa": "extraidos_cali", "filas_restantes": len(m), "excluidos": 0}]
+    steps = [{"etapa": "extraidos_municipio", "filas_restantes": len(m), "excluidos": 0}]
     def keep(mask, etapa):
         nonlocal m
         before = len(m)
@@ -59,7 +62,10 @@ def preparar_microdatos(raw, cfg):
     keep(~m.HUELLA_REGISTRO.duplicated(), "sin_duplicados_exactos_originales")
     for c in ["COD_EVE", "COD_PAIS_O", "COD_DPTO_O", "COD_MUN_O", "Estado_final_de_caso", "confirmados"]:
         m[c] = pd.to_numeric(m[c], errors="coerce")
-    keep((m.COD_EVE==210) & (m.COD_PAIS_O==170) & (m.COD_DPTO_O==76) & (m.COD_MUN_O==1), "evento_y_ubicacion_validos")
+    codigo = str(cfg["municipio"]).zfill(5)
+    keep((m.COD_EVE==210) & (m.COD_PAIS_O==170) &
+         (m.COD_DPTO_O==int(codigo[:2])) & (m.COD_MUN_O==int(codigo[2:])),
+         "evento_y_ubicacion_validos")
     keep(m.Estado_final_de_caso.isin(cfg["inclusion_estados"]), "estados_2_3_5")
     for c in ["INI_SIN", "FEC_NOT", "FEC_CON"]:
         m[c + "_fecha"] = parsear_fecha(m[c])
@@ -150,17 +156,22 @@ def agregar_features(p):
     p["elegible_modelo"] = p[FEATURES+["exceso"]].notna().all(axis=1)
     return p
 
-def exportar_eda(raw, m, audit, quality, panel):
+def exportar_eda(raw, m, audit, quality, panel, cfg=None):
+    cfg = config() if cfg is None else cfg
+    ROOT = raiz_salida(cfg)
+    ciudad = cfg.get("slug", "cali")
+    if not panel.cod_municipio.astype(str).eq(str(cfg["municipio"])).all():
+        raise ValueError("El panel no pertenece al municipio configurado.")
     dest = ROOT/"data/processed"
     dest.mkdir(parents=True, exist_ok=True)
     reports = ROOT/"reports/tables"
     reports.mkdir(parents=True, exist_ok=True)
-    m.to_csv(dest/"cali_microdatos_validados.csv", index=False)
+    m.to_csv(dest/f"{ciudad}_microdatos_validados.csv", index=False)
     excluded = raw.loc[~raw.HUELLA_REGISTRO.isin(m.HUELLA_REGISTRO)].copy()
     excluded["motivo_fecha"] = np.where(parsear_fecha(excluded.INI_SIN).isna(),
         "inicio_sintomas_ausente_o_invalido", "fuera_ventana_u_otra_regla_ver_auditoria")
     excluded.to_csv(dest/"registros_excluidos.csv",index=False)
-    panel.to_csv(dest/"cali_panel_semanal.csv", index=False)
+    panel.to_csv(dest/f"{ciudad}_panel_semanal.csv", index=False)
     audit.to_csv(reports/"auditoria_limpieza.csv", index=False)
     pd.DataFrame(quality["diagnostico_por_archivo"]).to_csv(reports/"fechas_por_archivo.csv",index=False)
     annual = panel.groupby("anio_epi").agg(
@@ -179,6 +190,10 @@ def exportar_eda(raw, m, audit, quality, panel):
 
 def entrenar_logistica(panel, cfg):
     """Primera comparación: hiperparámetros fijos y umbral elegido solo en validación."""
+    ROOT = raiz_salida(cfg)
+    ciudad = cfg.get("slug", "cali")
+    if not panel.cod_municipio.astype(str).eq(str(cfg["municipio"])).all():
+        raise ValueError("No se pueden mezclar municipios en un modelo independiente.")
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
     from sklearn.linear_model import LogisticRegression
@@ -244,7 +259,7 @@ def entrenar_logistica(panel, cfg):
     pd.DataFrame(splits).to_csv(reports/"particiones_temporales.csv", index=False)
     coefficients = pd.DataFrame({"variable":FEATURES,"coeficiente_estandarizado":model[-1].coef_[0]})
     coefficients.to_csv(reports/"coeficientes_logistica.csv", index=False)
-    (ROOT/"modelos").mkdir(exist_ok=True)
+    (ROOT/"modelos").mkdir(parents=True, exist_ok=True)
     metadata = {"municipio":cfg["municipio"],"modelo":"logistica_L2_C1",
                 "features":FEATURES,"config":cfg,"umbral_probabilidad":threshold,
                 "entrenado_hasta":str(train.fin_semana.max().date()),"particiones":splits,
@@ -254,6 +269,6 @@ def entrenar_logistica(panel, cfg):
                 "sha256_panel":hashlib.sha256(panel.to_csv(index=False).encode()).hexdigest()}
     version=cfg["version_experimento"]
     metadata["version_experimento"]=version
-    joblib.dump({"pipeline":model,"metadata":metadata}, ROOT/f"modelos/logistica_cali_{version}.joblib")
-    guardar_json(ROOT/f"modelos/logistica_cali_{version}.json",metadata)
+    joblib.dump({"pipeline":model,"metadata":metadata}, ROOT/f"modelos/logistica_{ciudad}_{version}.joblib")
+    guardar_json(ROOT/f"modelos/logistica_{ciudad}_{version}.json",metadata)
     return model, metric_df, pred_df, pd.DataFrame(splits), coefficients

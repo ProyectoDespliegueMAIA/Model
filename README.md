@@ -77,10 +77,46 @@ Se usan conteos finales por inicio de síntomas y clasificación final. No se ha
 
 Los resultados de v0 y sus notebooks/configuración se conservaron en `data/historico/cronologia_v0/`. `docs/primer_experimento.md` describe aquel experimento histórico; `docs/reconstruccion_fecha_sintomas.md` documenta la decisión actual y su comparación. Tras observar resultados de 2024 en v0, la reconstrucción es un análisis de sensibilidad por calidad de datos y no una nueva prueba independiente.
 
-Siguientes tareas: revisar cronologías y cobertura, contrastar parámetros del canal, evaluar HistGradientBoostingClassifier con validación temporal, medir oportunidad por episodios, extender a dos municipios y construir API/React. No utilizar reiteradamente 2024 para escoger modelos y luego seguir llamándolo prueba independiente; al tomar nuevas decisiones deben predefinirse cortes adicionales.
+Siguientes tareas: revisar cronologías y cobertura, contrastar parámetros del canal, evaluar HistGradientBoostingClassifier con validación temporal, medir oportunidad por episodios, comparar los tres municipios y construir API/React. No utilizar reiteradamente 2024 para escoger modelos y luego seguir llamándolo prueba independiente; al tomar nuevas decisiones deben predefinirse cortes adicionales.
 
 ## Referencias
 
 - INS, calendario epidemiológico 2025: https://portalsivigila.ins.gov.co/Documentos%20compartidos/Calendario%202025.pdf
 - Umaña et al. 2026, parametrización del canal endémico: https://publichealth.jmir.org/2026/1/e79914
 - scikit-learn, validación temporal: https://scikit-learn.org/stable/modules/cross_validation.html#time-series-split
+
+
+## Medellín y Villavicencio: modelos independientes
+
+Se incorporaron Medellín (05001) y Villavicencio (50001) con las mismas reglas y diez predictores del piloto de Cali. Cada municipio tiene su propio canal histórico, escalador, coeficientes y umbral de probabilidad; no se combinan registros de ciudades para ajustar el modelo.
+
+Notebooks, en orden para cada ciudad:
+
+- `notebooks/01_preparacion_exploracion_medellin.ipynb`
+- `notebooks/02_primer_modelo_logistica_medellin.ipynb`
+- `notebooks/01_preparacion_exploracion_villavicencio.ipynb`
+- `notebooks/02_primer_modelo_logistica_villavicencio.ipynb`
+
+```powershell
+.\.venv\Scripts\python.exe scripts/extraer_ciudades.py
+.\.venv\Scripts\python.exe scripts/ejecutar_notebooks.py --ciudad medellin
+.\.venv\Scripts\python.exe scripts/ejecutar_notebooks.py --ciudad villavicencio
+.\.venv\Scripts\python.exe scripts/resumir_ciudades.py
+```
+
+Las configuraciones se encuentran en `configs/medellin.json` y `configs/villavicencio.json`. Sus salidas locales se aíslan en `ciudades/medellin/` y `ciudades/villavicencio/`, cada una con `data/`, `reports/` y `modelos/`. La carpeta `ciudades/` está excluida de Git. Las rutas de Cali se conservan. El resumen agregado y sus limitaciones se documentan en `docs/resumen_tres_ciudades.md`.
+
+Para regenerar los notebooks de una sola ciudad, usar `scripts/crear_notebooks.py --ciudad medellin` o `--ciudad villavicencio`; después ejecutarlos para recuperar las salidas. El generador no cambia los notebooks de las otras ciudades. No es necesario regenerarlos para trabajar interactivamente.
+
+
+## Evaluación adicional de Ibagué
+
+Ibagué (73001) se evalúa como candidata, conservando todos los experimentos anteriores. Su inclusión no cambia automáticamente la selección de tres ciudades. Usa `configs/ibague.json` y salidas aisladas en `ciudades/ibague/`.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/extraer_ciudades.py --ciudad ibague
+.\.venv\Scripts\python.exe scripts/ejecutar_notebooks.py --ciudad ibague
+.\.venv\Scripts\python.exe scripts/evaluar_ibague.py
+```
+
+Los notebooks son `01_preparacion_exploracion_ibague.ipynb` y `02_primer_modelo_logistica_ibague.ipynb`. El informe agregado se genera en `docs/evaluacion_ibague.md`. La comparación distingue cobertura y disponibilidad de clases de las métricas predictivas. El extractor admite también `--ciudad medellin` y `--ciudad villavicencio` para trabajar con un solo municipio sin reextraer los otros.

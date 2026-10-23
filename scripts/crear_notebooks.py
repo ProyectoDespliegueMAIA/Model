@@ -423,9 +423,58 @@ Referencias: [validación temporal scikit-learn](https://scikit-learn.org/stable
 
 import argparse
 parser=argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--solo',choices=['01_preparacion_exploracion_cali.ipynb','02_primer_modelo_logistica_cali.ipynb'])
+parser.add_argument('--solo', help='Nombre exacto del notebook de la ciudad seleccionada')
+parser.add_argument('--ciudad', choices=['cali','medellin','villavicencio','ibague'], default='cali')
 args=parser.parse_args()
 for name,items in [('01_preparacion_exploracion_cali.ipynb',cells),('02_primer_modelo_logistica_cali.ipynb',cells2)]:
+    if args.ciudad != 'cali':
+        import re, copy
+        slug=args.ciudad
+        nombre={'medellin':'Medellín','villavicencio':'Villavicencio','ibague':'Ibagué'}[slug]
+        codigo={'medellin':'05001','villavicencio':'50001','ibague':'73001'}[slug]
+        items=copy.deepcopy(items)
+        name=name.replace('cali',slug)
+        for cell in items:
+            text=re.sub(r'(?<![a-z])cali(?![a-z])',slug,cell.source.replace('Cali',nombre)).replace('76001',codigo)
+            text=text.replace('scripts/extraer_'+slug+'.py','scripts/extraer_ciudades.py --ciudad '+slug)
+            text=text.replace('annual, summary = exportar_eda(raw,micro,auditoria,calidad,panel)',
+                              'annual, summary = exportar_eda(raw,micro,auditoria,calidad,panel,cfg)')
+            text=re.sub(r"ROOT\s*/\s*((?:f)?['\"])(data/|reports/|modelos/)",r"SALIDA/\1\2",text)
+            if cell.cell_type=='code' and 'cfg = config()' in text:
+                text=re.sub(r"FIG = SALIDA\s*/",f"SALIDA = raiz_salida(config('{slug}'))\nFIG = SALIDA/",text)
+                text=text.replace('cfg = config()',f"cfg = config('{slug}')")
+            text=text.replace('La comparación de municipios y el clima quedan para etapas siguientes.',
+                              'Este municipio se analiza y entrena por separado; el clima queda para etapas siguientes.')
+            text=text.replace('y extensión a otros municipios','y comparación entre municipios')
+            text=text.replace('y extensión municipal','y comparación municipal')
+            if cell.cell_type=='markdown':
+                text=text.replace('Ya observada en revisiones anteriores; no es una nueva prueba independiente.',
+                                  'Se reserva para evaluar después del ajuste y de seleccionar el umbral en validación.')
+                text=text.replace('Como ya se observaron resultados de 2024 en v0, la comparación de versiones es un análisis de sensibilidad, no una nueva prueba independiente.',
+                                  'En Cali 2024 ya fue observado; en este municipio esta es la primera evaluación. No se usa prueba para seleccionar el umbral.')
+            if cell.cell_type=='code' and 'workspace = next(' in text:
+                text="""cobertura = panel.groupby('anio_epi').agg(
+    semanas=('semana_epi','size'), semanas_con_registros=('semana_con_registros','sum'),
+    notificaciones=('n_registros','sum'))
+cobertura['pct_semanas_con_registros'] = 100*cobertura.semanas_con_registros/cobertura.semanas
+display(cobertura.round(2))
+print('Presencia de registros no certifica cobertura completa. No imputamos ceros.')"""
+            if cell.cell_type=='markdown' and 'Contraste con la serie recibida' in text:
+                text='## 4 Cobertura temporal por municipio\n\nRevisamos presencia de registros por año; las semanas sin filas permanecen desconocidas.'
+            text=text.replace("parse_dates=['inicio_semana','fin_semana','corte_prediccion']",
+                              "dtype={'cod_municipio':'string'}, parse_dates=['inicio_semana','fin_semana','corte_prediccion']")
+            text=text.replace('filas_'+slug,'filas_municipio')
+            if cell.cell_type=='code' and 'tabla_umbrales =' in text:
+                text += """
+positivos_validacion = int(val.exceso.sum())
+print('Semanas con exceso en validación:', positivos_validacion)
+if positivos_validacion < 10:
+    print('LIMITACIÓN: pocos excesos en validación; el umbral y la sensibilidad son inestables.')
+if tabla_umbrales.f2_validacion.max() == 0:
+    print('LIMITACIÓN: F2 es cero en toda la rejilla. El umbral resulta del desempate; no acredita capacidad de alerta.')
+print('Las limitaciones se conservan como resultado del primer experimento, sin ajustar con prueba.')
+"""
+            cell.source=text
     if args.solo and name!=args.solo:
         continue
     n=nbf.v4.new_notebook(cells=items,metadata={
