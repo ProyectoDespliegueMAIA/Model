@@ -7,7 +7,11 @@ from sklearn.metrics import (confusion_matrix, precision_score, recall_score,
 from .pipeline import FEATURES
 
 def coincide_artefacto(panel, cfg, metadata):
-    return (metadata.get('sha256_panel')==hashlib.sha256(panel.to_csv(index=False).encode()).hexdigest()
+    # Los artefactos históricos se generaron en Windows. Admitir únicamente la
+    # diferencia LF/CRLF permite verificarlos en Linux sin cambiar datos ni metadatos.
+    huellas = {hashlib.sha256(panel.to_csv(index=False, lineterminator=salto).encode()).hexdigest()
+               for salto in ['\n', '\r\n']}
+    return (metadata.get('sha256_panel') in huellas
             and metadata.get('config')==cfg and metadata.get('features')==FEATURES
             and metadata.get('version_experimento')==cfg['version_experimento'])
 

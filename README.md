@@ -120,3 +120,25 @@ Ibagué (73001) se evalúa como candidata, conservando todos los experimentos an
 ```
 
 Los notebooks son `01_preparacion_exploracion_ibague.ipynb` y `02_primer_modelo_logistica_ibague.ipynb`. El informe agregado se genera en `docs/evaluacion_ibague.md`. La comparación distingue cobertura y disponibilidad de clases de las métricas predictivas. El extractor admite también `--ciudad medellin` y `--ciudad villavicencio` para trabajar con un solo municipio sin reextraer los otros.
+
+
+## MLflow con Docker
+
+La instalación local está en [`docker/mlflow/`](docker/mlflow/README.md), con MLflow 3.17.2, SQLite y artefactos en un volumen persistente. Desde la raíz del repositorio:
+
+```powershell
+docker compose -f docker/mlflow/compose.yaml up -d --build --wait
+docker compose -f docker/mlflow/compose.yaml --profile herramientas run --rm cliente
+```
+
+Interfaz: http://localhost:5000. El segundo comando verifica parámetros, métricas y artefactos desde un cliente en Docker usando datos sintéticos. El registro de los experimentos existentes se realiza con el servicio `importador`; ver `docs/seguimiento_mlflow.md`. La dependencia `mlflow==3.17.2` queda fijada en los requisitos del proyecto.
+
+
+### Registrar los experimentos existentes
+
+```powershell
+$env:DENGUE_GIT_COMMIT = git rev-parse HEAD
+docker compose -f docker/mlflow/compose.yaml run --rm importador
+```
+
+El experimento `dengue_exceso_semanal` conserva 20 ejecuciones: cinco métodos por cada una de las cuatro ciudades evaluadas. El importador verifica métricas y modelos, trabaja con el repositorio en solo lectura y reutiliza las importaciones idénticas. No reentrena ni modifica los notebooks. Protocolo, comandos y lectura de resultados: [`docs/seguimiento_mlflow.md`](docs/seguimiento_mlflow.md).
