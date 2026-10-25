@@ -1,0 +1,17 @@
+ciudad,bloque,filas,positivos,inicio,fin
+Cali,entrenamiento,501,175,2012-01-15,2022-01-01
+Cali,validacion,104,36,2022-01-02,2023-12-30
+Cali,prueba_2024,52,49,2023-12-31,2024-12-28
+Cali,adicional_2025,52,0,2024-12-29,2025-12-27
+Medellín,entrenamiento,458,178,2012-04-01,2022-01-01
+Medellín,validacion,94,2,2022-01-02,2023-12-30
+Medellín,prueba_2024,50,48,2023-12-31,2024-12-28
+Medellín,adicional_2025,50,35,2024-12-29,2025-12-27
+Villavicencio,entrenamiento,518,175,2012-01-01,2022-01-01
+Villavicencio,validacion,104,61,2022-01-02,2023-12-30
+Villavicencio,prueba_2024,52,14,2023-12-31,2024-12-28
+Villavicencio,adicional_2025,52,48,2024-12-29,2025-12-27
+Ibagué,entrenamiento,515,173,2012-01-01,2022-01-01
+Ibagué,validacion,93,38,2022-01-02,2023-12-30
+Ibagué,prueba_2024,50,41,2023-12-31,2024-12-28
+Ibagué,adicional_2025,50,1,2024-12-29,2025-12-27
