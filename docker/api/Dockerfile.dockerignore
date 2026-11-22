@@ -1,0 +1,14 @@
+**
+!requirements-api.txt
+!src/
+!src/dengue/
+!src/dengue/**/*.py
+!data/
+!data/api_dengue/
+!data/api_dengue/*/
+!data/api_dengue/*/historico.csv
+!data/api_dengue/*/semanas.csv
+!data/api_dengue/*/metadata.json
+!data/api_dengue/*/logistica.joblib
+!data/api_dengue/*/evaluacion.json
+!data/api_dengue/*/estadisticas.json

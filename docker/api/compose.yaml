@@ -1,0 +1,11 @@
+name: dengue-api
+services:
+  api:
+    image: dengue-api:local
+    build:
+      context: ../..
+      dockerfile: docker/api/Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DENGUE_CORS_ORIGINS: ${DENGUE_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}

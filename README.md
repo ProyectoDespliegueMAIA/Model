@@ -1,6 +1,6 @@
 # Modelo de alerta semanal de dengue en Cali
 
-Primer ejercicio reproducible de preparación, exploración y clasificación de exceso de notificaciones de dengue. La fuente son los 19 Excel del evento 210 de 2007–2025. Este repositorio inicia el componente de datos y modelo; todavía no incluye API ni React.
+Primer ejercicio reproducible de preparación, exploración y clasificación de exceso de notificaciones de dengue. La fuente son los 19 Excel del evento 210 de 2007–2025. La [API de predicciones semanales](docs/api_dengue.md) expone los modelos de Cali, Ibagué y Villavicencio para su integración con el frontend.
 
 ## Recorrido del ejercicio
 
