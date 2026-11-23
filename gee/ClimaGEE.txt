@@ -1,0 +1,108 @@
+// ============================================================
+// PROMEDIOS DIARIOS POR MUNICIPIO (ÁREA TOTAL) – 2007 a 2025
+// Cali · Villavicencio · Ibagué
+// Fuentes: CHIRPS diario (precip) + ERA5-Land diario (T y HR)
+// ============================================================
+
+// --- 1. Polígonos municipales (FAO GAUL 2025, nivel 2) ---
+var gaul = ee.FeatureCollection('FAO/GAUL_SIMPLIFIED_500m/2025/level2');
+
+var municipios = gaul
+  .filter(ee.Filter.eq('GAUL0_NAME', 'Colombia'))
+  .filter(ee.Filter.inList('GAUL2_NAME', ['Cali', 'Villavicencio', 'Ibagué', 'Ibague']));
+
+print('Municipios encontrados: ' + municipios.aggregate_array('GAUL2_NAME').join(', '));
+print('Cantidad: ' + municipios.size());
+
+// --- 2. Período de análisis ---
+var startDate = '2007-01-01';
+var endDate   = '2026-01-01';   // exclusivo → cubre hasta 2025-12-31
+
+// --- 3. Colecciones base ---
+var chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+  .filterDate(startDate, endDate)
+  .select('precipitation');                    // mm/día
+
+var era5 = ee.ImageCollection('ECMWF/ERA5_LAND/DAILY_AGGR')
+  .filterDate(startDate, endDate)
+  .select(['temperature_2m', 'dewpoint_temperature_2m']);
+
+// --- 4. Humedad relativa (Magnus-Tetens) ---
+function calcHR(img) {
+  var T  = img.select('temperature_2m').subtract(273.15);
+  var Td = img.select('dewpoint_temperature_2m').subtract(273.15);
+  var e  = ee.Image(6.112).multiply(ee.Image(17.67).multiply(Td).divide(Td.add(243.5)).exp());
+  var es = ee.Image(6.112).multiply(ee.Image(17.67).multiply(T).divide(T.add(243.5)).exp());
+  return img.addBands(e.divide(es).multiply(100).rename('humedad_relativa'));
+}
+var era5HR = era5.map(calcHR);
+
+// --- 5. Lista de días del período ---
+var nDias = ee.Date(endDate).difference(ee.Date(startDate), 'day');
+var dias  = ee.List.sequence(0, nDias.subtract(1));
+
+// --- 6. Colección diaria con todas las variables juntas ---
+var escala = 5566;   // ~resolución CHIRPS; sube a 11132 si va lento
+
+var imagenesDiarias = ee.ImageCollection.fromImages(
+  dias.map(function(d) {
+    var fecha = ee.Date(startDate).advance(d, 'day');
+
+    var ch = ee.Image(
+      chirps.filterDate(fecha, fecha.advance(1, 'day')).first()
+    ).rename('precipitacion_mm');
+
+    var e5 = ee.Image(
+      era5HR.filterDate(fecha, fecha.advance(1, 'day')).first()
+    );
+
+    var t = e5.select('temperature_2m').subtract(273.15).rename('temperatura_C');
+    var h = e5.select('humedad_relativa').rename('humedad_relativa');
+
+    return ch.addBands([t, h]).set('fecha', fecha.format('YYYY-MM-dd'));
+  })
+);
+
+// --- 7. Reducción espacial sobre los 3 municipios (parámetros corregidos) ---
+var tabla = imagenesDiarias.map(function(img) {
+  var stats = img.reduceRegions({
+    collection:         municipios,
+    reducer:            ee.Reducer.mean(),
+    scale:              escala,
+    maxPixelsPerRegion: 1e9,
+    tileScale:          4
+  });
+
+  return stats.map(function(f) {
+    return ee.Feature(null, {
+      fecha:            img.get('fecha'),
+      municipio:        f.get('GAUL2_NAME'),
+      precipitacion_mm: f.get('precipitacion_mm'),
+      temperatura_C:    f.get('temperatura_C'),
+      humedad_relativa: f.get('humedad_relativa')
+    });
+  });
+}).flatten();
+
+print('Total de filas a exportar: ' + tabla.size());
+
+// --- 8. Un CSV por municipio ---
+var nombres = municipios.aggregate_array('GAUL2_NAME').getInfo();
+
+nombres.forEach(function(nombre) {
+  var sufijo = nombre.replace(/[^a-zA-Z0-9]/g, '_');
+  var subset = tabla.filter(ee.Filter.eq('municipio', nombre));
+
+  Export.table.toDrive({
+    collection:     subset,
+    description:    'clima_diario_' + sufijo,
+    folder:         'GEE_Clima_Colombia',
+    fileNamePrefix: 'clima_diario_' + sufijo,
+    fileFormat:     'CSV',
+    selectors:      ['fecha', 'municipio', 'precipitacion_mm', 'temperatura_C', 'humedad_relativa']
+  });
+});
+
+// --- 9. Mostrar municipios ---
+Map.centerObject(municipios, 6);
+Map.addLayer(municipios, {color: 'red'}, 'Municipios (área total)');

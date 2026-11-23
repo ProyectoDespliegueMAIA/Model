@@ -1,0 +1,29 @@
+cd 'C:\Users\aicra\OneDrive\UNIANDES\Despliegue\Codigo\Repos\FrontEndLocal'
+
+& "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe" .\node_modules\vite\bin\vite.js --host 127.0.0.1 --port 5173 --strictPort
+
+
+Abre Docker Desktop y ejecuta en PowerShell:
+cd 'C:\Users\aicra\OneDrive\UNIANDES\Despliegue\Codigo\Repos\ModeloDengue\ModeloDengue'
+docker compose -f docker/api/compose.yaml up -d --build --wait
+Invoke-RestMethod http://127.0.0.1:8000/health
+
+http://127.0.0.1:8000/docs#/default/dashboard_api_v1_ciudades__ciudad__dashboard_get
+
+
+Canal endemico
+
+subir el excel de datos para que la ia corra sobre el excel de datos.
+
+
+cd 'C:\Users\aicra\OneDrive\UNIANDES\Despliegue\Codigo\Repos\FrontEndLocal'
+docker compose up -d --build --wait
+Para detenerlos:
+docker compose stop
+
+http://127.0.0.1:8080
+
+Desde la carpeta de ModeloDengue donde ejecutaste el comando anterior, detén solo la API con:
+docker compose -f docker/api/compose.yaml stop api
+Esto conserva el contenedor y deja el frontend como está. Para volver a iniciar la API:
+docker compose -f docker/api/compose.yaml start api
